@@ -24,12 +24,14 @@
 #include <Preferences.h>
 #include "Mail_Detected.h"
 #include "Parcel_Door.h"
+#include "Mailbox_Capacity.h"  
 
 // Forward declarations
 bool sendTelegramMessage(String chatId, String message);
 void sendMailNotification();
 void sendParcelNotification();
 void sendApproachNotification();
+void sendCapacityAlert(int level);
 void checkTelegramCommands();
 void saveUsersToStorage();
 void handleNewUser(String chatId, String text, int userIndex);
@@ -91,6 +93,7 @@ struct UserAccount {
 // ============================================================
 QueueHandle_t     mailQueue;
 QueueHandle_t     parcelQueue;
+QueueHandle_t     capacityQueue;
 SemaphoreHandle_t usersMutex;
 SemaphoreHandle_t modeMutex;
 
@@ -244,7 +247,7 @@ void handleNewUser(String chatId, String text, int userIndex) {
 // ============================================================
 void handleLoggedInUser(String chatId, String text, int userIndex) {
 
-  if (text == "active") {
+  if (text == "/active") {
     // Lock modeMutex before writing currentMode
     if (xSemaphoreTake(modeMutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
       currentMode = 1;
@@ -254,7 +257,7 @@ void handleLoggedInUser(String chatId, String text, int userIndex) {
     return;
   }
 
-  if (text == "sleep") {
+  if (text == "/sleep") {
     if (xSemaphoreTake(modeMutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
       currentMode = 0;
       xSemaphoreGive(modeMutex);
@@ -263,7 +266,7 @@ void handleLoggedInUser(String chatId, String text, int userIndex) {
     return;
   }
 
-  if (text == "status") {
+  if (text == "/status") {
     int mode = 1;
     if (xSemaphoreTake(modeMutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
       mode = currentMode;
@@ -278,32 +281,39 @@ void handleLoggedInUser(String chatId, String text, int userIndex) {
     return;
   }
 
-  if (text == "sensor") {
+  if (text == "/sensor") {
     // getSensorStatus() reads GPIO directly - safe from Core 0
     String sensorInfo = getSensorStatus();
     bot.sendMessage(chatId, sensorInfo, "Markdown");
     return;
   }
 
-  if (text == "door") {
+  if (text == "/door") {
     String doorInfo = getDoorStatusString();
     bot.sendMessage(chatId, doorInfo, "Markdown");
     return;
   }
 
-  if (text == "logout") {
+   if (text == "/capacity") {
+    String capInfo = getCapacityStatus();
+    bot.sendMessage(chatId, capInfo, "Markdown");
+    return;
+  }
+
+  if (text == "/logout") {
     deleteUser(userIndex);
     bot.sendMessage(chatId, "👋 *Logged out successfully!*\n\nYour account has been deleted.\nSend any message to register again.", "Markdown");
     return;
   }
 
   String help  = "❓ Unknown command.\n\n*Available commands:*\n";
-  help        += "• `active` - Switch to Active Mode\n";
-  help        += "• `sleep` - Switch to Sleep Mode\n";
-  help        += "• `status` - Check current status\n";
-  help        += "• `sensor` - Check mail sensor reading\n";
-  help        += "• `door` - Check parcel door status\n";
-  help        += "• `logout` - Logout & delete account";
+  help        += "• `/active` - Switch to Active Mode\n";
+  help        += "• `/sleep` - Switch to Sleep Mode\n";
+  help        += "• `/status` - Check current status\n";
+  help        += "• `/sensor` - Check mail sensor reading\n";
+  help        += "• `/door` - Check parcel door status\n";
+  help += "• `/capacity` - Check mailbox capacity\n";
+  help        += "• `/logout` - Logout & delete account";
   bot.sendMessage(chatId, help, "Markdown");
 }
 
@@ -467,6 +477,37 @@ void sendApproachNotification() {
   Serial.println("[Notify] Parcel stored alerts sent.");
 }
 
+void sendCapacityAlert(int level) {
+  if (xSemaphoreTake(usersMutex, pdMS_TO_TICKS(2000)) != pdTRUE) return;
+
+  String chatIds[MAX_USERS];
+  int    count = 0;
+  for (int i = 0; i < MAX_USERS; i++) {
+    if (users[i].isLoggedIn && users[i].chatId != "") {
+      chatIds[count++] = users[i].chatId;
+    }
+  }
+  xSemaphoreGive(usersMutex);
+
+  String msg;
+  if (level == 2) {
+    msg  = "🔴 *Mailbox is FULL!*\n\n";
+    msg += "Your mailbox is at 90%+ capacity.\n";
+    msg += "📬 Please collect your mail soon!\n";
+    msg += "Use `capacity` command to check details.";
+  } else {
+    msg  = "🟡 *Mailbox Nearly Full*\n\n";
+    msg += "Your mailbox is at 70%+ capacity.\n";
+    msg += "📬 Consider collecting your mail soon.";
+  }
+
+  for (int i = 0; i < count; i++) {
+    sendTelegramMessage(chatIds[i], msg);
+    delay(300);
+  }
+  Serial.println("[Notify] Capacity alert sent.");
+}
+
 // ============================================================
 //  NETWORK FUNCTIONS
 // ============================================================
@@ -565,6 +606,14 @@ void SensorTask(void* parameter) {
       Serial.println("[Core1] Approach event sent to queue.");
     }
 
+    // ── Capacity check ────────────────────────────────────
+    int capAlert = checkCapacityAlert();
+    if (capAlert > 0) {
+      uint8_t capEvent = (uint8_t)capAlert;
+      xQueueSend(capacityQueue, &capEvent, pdMS_TO_TICKS(100));
+      Serial.println("[Core1] Capacity alert event sent.");
+    }
+
     vTaskDelay(pdMS_TO_TICKS(SENSOR_CHECK_MS));
   }
 }
@@ -588,6 +637,7 @@ void WiFiTask(void* parameter) {
   unsigned long lastTelegramCheck = 0;
   uint8_t       mailEvent         = 0;
   uint8_t       parcelEvent       = 0;
+  uint8_t       capEvent          = 0;
 
   for (;;) {
 
@@ -614,6 +664,12 @@ void WiFiTask(void* parameter) {
         Serial.println("[Core0] Approach event - sending notification.");
         sendApproachNotification();
       }
+    }
+
+    // ── Check capacityQueue (non-blocking) ───────────────
+    if (xQueueReceive(capacityQueue, &capEvent, 0) == pdTRUE) {
+      Serial.println("[Core0] Capacity alert event received.");
+      sendCapacityAlert(capEvent);
     }
 
     // ── Telegram poll every 3000ms ───────────────────────
@@ -647,11 +703,12 @@ void setup() {
   // Queue: holds up to 5 mail events, each event = 1 byte
   mailQueue  = xQueueCreate(5, sizeof(uint8_t));
   parcelQueue = xQueueCreate(5, sizeof(uint8_t));
+  capacityQueue = xQueueCreate(5, sizeof(uint8_t)); 
 
   usersMutex = xSemaphoreCreateMutex();
   modeMutex  = xSemaphoreCreateMutex();
 
-  if (mailQueue == NULL || parcelQueue == NULL || usersMutex == NULL || modeMutex == NULL) {
+  if (mailQueue == NULL || parcelQueue == NULL || capacityQueue == NULL || usersMutex == NULL || modeMutex == NULL) {
     Serial.println("[ERROR] FreeRTOS objects failed. Restarting...");
     delay(3000);
     ESP.restart();
@@ -660,6 +717,7 @@ void setup() {
   // ── Init sensor and load users ───────────────────────
   initSensor();
   initDoor();
+  initCapacitySensor(); 
   loadUsersFromStorage();
 
   // ── Connect WiFi ─────────────────────────────────────
