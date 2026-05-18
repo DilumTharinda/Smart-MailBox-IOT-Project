@@ -1,0 +1,35 @@
+# ============================================================
+#  Smart Drop — ESP32 IoT Project .gitignore
+# ============================================================
+
+# ── PlatformIO ───────────────────────────────────────────────
+.pio/
+.pioenvs/
+.piolibdeps/
+
+# ── VS Code ──────────────────────────────────────────────────
+.vscode/
+*.code-workspace
+
+# ── Arduino IDE ──────────────────────────────────────────────
+build/
+*.hex
+*.elf
+*.bin
+*.map
+
+# ── Credentials / Secrets ────────────────────────────────────
+# Never commit WiFi password or Telegram token to GitHub
+secrets.h
+config.h
+credentials.h
+
+# ── OS Files ─────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Logs & Temp ──────────────────────────────────────────────
+*.log
+*.tmp
+*.bak
