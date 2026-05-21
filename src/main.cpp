@@ -40,8 +40,8 @@ void handleLoggedInUser(String chatId, String text, int userIndex);
 // ============================================================
 //  USER SETTINGS
 // ============================================================
-const char* WIFI_SSID        = "Android Boy S";
-const char* WIFI_PASSWORD    = "#@AbPq45@";
+const char* WIFI_SSID        = "PASINDU";
+const char* WIFI_PASSWORD    = "12345678";
 const char* BOT_TOKEN        = "1589610753:AAEY3Gpdv_e-Vu37U-H5Jvh0OmO5xHPb1dg";
 const char* MAILBOX_PASSWORD = "1234";
 const int   MAX_USERS        = 5;
