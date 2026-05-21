@@ -27,8 +27,6 @@
 
 Smart Drop is an IoT device that attaches to any standard mailbox and turns it into a smart, connected device. It uses ultrasonic sensors and an ESP32 microcontroller to detect mail and parcels, then sends real-time alerts to your phone through Telegram. No more walking to the gate to check an empty mailbox.
 
-This project was built for the **INCO 2026 competition** by Team Visionix, Department of Information Management, University of Kelaniya.
-
 ---
 
 ## The Problem
@@ -105,7 +103,7 @@ Smart Drop converts any existing mailbox into a smart device without replacing t
 | Gear Motor (or DVD-ROM motor) | 1 | Opens and closes the parcel drawer door |
 | 12V DC Power Adapter (500mA) | 1 | Main power supply |
 | DC-DC Buck Converter (12V → 5V) | 1 | Steps down voltage for ESP32 and sensors |
-| Capacitor 1000µF 16V | 1 | Input spike filter on power supply |
+| Capacitor 1000µF 16V | 1 | Input spike filter on MotorController|
 | Capacitor 470µF 16V | 1 | Output ripple filter on power supply |
 | Resistors 1kΩ | 6 | Voltage dividers for sensor ECHO pins (2 per sensor) |
 | Resistor 220Ω | 1 | LED current limiter |
@@ -117,7 +115,7 @@ Smart Drop converts any existing mailbox into a smart device without replacing t
 
 ## Circuit Diagram
 
-![Smart Drop Circuit Diagram](document/circuit_diagram.png)
+![Smart Drop Circuit Diagram](Document/circuit_diagram.png)
 
 ### Voltage Divider (Required on all ECHO pins)
 
